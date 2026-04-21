@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Double Camera Pro — Onboarding</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    min-height: 100vh;
+    background: radial-gradient(120% 100% at 50% 0%, #1a1410 0%, #0a0706 60%, #000 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro", system-ui, sans-serif;
+    color: #f5efe6;
+    overflow-x: hidden;
+  }
+  @keyframes livePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+  @keyframes successPop {
+    0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+    60% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  }
+  @keyframes successGlow {
+    0% { opacity: 0; transform: scale(0.6); }
+    50% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 0.6; transform: scale(1); }
+  }
+  @keyframes ambientPulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+  }
+  button { font-family: inherit; }
+  #root { min-height: 100vh; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="screens.jsx"></script>
+<script type="text/babel" src="onboarding-screens.jsx"></script>
+
+<script type="text/babel">
+const TWEAKS = /*EDITMODE-BEGIN*/{
+  "showDeviceFrame": false,
+  "autoAdvance": false,
+  "sceneVariant": "street"
+}/*EDITMODE-END*/;
+
+const SCREENS = [
+  { id: 'hero', Comp: HeroScreen, label: 'Hook' },
+  { id: 'customize', Comp: CustomizeScreen, label: 'Style' },
+  { id: 'drag', Comp: DragScreen, label: 'Move' },
+  { id: 'export', Comp: ExportScreen, label: 'Export' },
+];
+
+function OnboardingApp() {
+  const [idx, setIdx] = React.useState(() => {
+    const stored = parseInt(localStorage.getItem('dcp_onboard_idx') || '0', 10);
+    return isNaN(stored) ? 0 : Math.min(stored, SCREENS.length - 1);
+  });
+  const [floatPhase, setFloatPhase] = React.useState(0);
+  const [transitioning, setTransitioning] = React.useState(false);
+  const [tweaks, setTweaks] = React.useState(TWEAKS);
+  const [tweaksVisible, setTweaksVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    localStorage.setItem('dcp_onboard_idx', String(idx));
+  }, [idx]);
+
+  // global float timer for micro-interactions
+  React.useEffect(() => {
+    let raf;
+    const start = performance.now();
+    const tick = (t) => {
+      setFloatPhase(((t - start) / 600));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // tweaks messaging
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      if (!e.data) return;
+      if (e.data.type === '__activate_edit_mode') setTweaksVisible(true);
+      if (e.data.type === '__deactivate_edit_mode') setTweaksVisible(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const setTweak = (key, val) => {
+    setTweaks(t => ({ ...t, [key]: val }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*');
+  };
+
+  const next = () => {
+    if (transitioning) return;
+    if (idx >= SCREENS.length - 1) {
+      // reset for demo
+      setTransitioning(true);
+      setTimeout(() => { setIdx(0); setTransitioning(false); }, 400);
+      return;
+    }
+    setTransitioning(true);
+    setTimeout(() => { setIdx(i => i + 1); setTransitioning(false); }, 400);
+  };
+
+  // keyboard support
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') next();
+      if (e.key === 'ArrowLeft') setIdx(i => Math.max(0, i - 1));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [idx]);
+
+  const currentScreen = (
+    <div style={{
+      position: 'absolute', inset: 0,
+      opacity: transitioning ? 0 : 1,
+      transform: transitioning ? 'scale(1.04)' : 'scale(1)',
+      transition: 'opacity 0.4s cubic-bezier(0.22,1,0.36,1), transform 0.5s cubic-bezier(0.22,1,0.36,1)',
+    }}>
+      {SCREENS.map((s, i) => {
+        const Comp = s.Comp;
+        return (
+          <div key={s.id} style={{
+            position: 'absolute', inset: 0,
+            pointerEvents: i === idx ? 'auto' : 'none',
+          }}>
+            <Comp active={i === idx && !transitioning} onNext={next} floatPhase={floatPhase} />
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const deviceContent = (
+    <div data-screen-label={`0${idx+1} ${SCREENS[idx].label}`} style={{
+      position: 'absolute', inset: 0, overflow: 'hidden',
+      background: '#000',
+    }}>
+      {currentScreen}
+    </div>
+  );
+
+  return (
+    <div style={{
+      minHeight: '100vh', width: '100%',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '40px 20px', position: 'relative',
+    }}>
+      {/* ambient lighting behind phone */}
+      <div style={{
+        position: 'fixed', left: '50%', top: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 700, height: 700, borderRadius: '50%',
+        background: `radial-gradient(circle, oklch(0.78 0.14 70 / 0.12) 0%, transparent 60%)`,
+        animation: 'ambientPulse 6s ease-in-out infinite',
+        pointerEvents: 'none',
+        filter: 'blur(40px)',
+      }} />
+
+      {/* header */}
+      <div style={{
+        position: 'fixed', top: 24, left: 0, right: 0,
+        display: 'flex', justifyContent: 'center', alignItems: 'center',
+        gap: 10, zIndex: 100, pointerEvents: 'none',
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 14px', borderRadius: 999,
+          background: 'rgba(30,22,16,0.5)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '0.5px solid rgba(255,255,255,0.08)',
+          fontSize: 12, fontWeight: 600, letterSpacing: 0.3,
+          color: 'rgba(245,239,230,0.7)',
+          textTransform: 'uppercase',
+        }}>
+          <div style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: 'oklch(0.78 0.14 70)',
+            boxShadow: '0 0 8px oklch(0.78 0.14 70)',
+          }} />
+          Double Camera Pro · Onboarding
+        </div>
+      </div>
+
+      {/* device */}
+      {tweaks.showDeviceFrame ? (
+        <IOSDevice width={390} height={844} dark>
+          {deviceContent}
+        </IOSDevice>
+      ) : (
+        <div style={{
+          width: 390, height: 844, borderRadius: 48, overflow: 'hidden',
+          boxShadow: '0 40px 80px rgba(0,0,0,0.6)',
+          position: 'relative', background: '#000',
+        }}>
+          {deviceContent}
+        </div>
+      )}
+
+      {/* nav controls (below phone) */}
+      <div style={{
+        position: 'fixed', bottom: 24, left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '8px 10px', borderRadius: 999,
+        background: 'rgba(30,22,16,0.6)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        border: '0.5px solid rgba(255,255,255,0.08)',
+        zIndex: 100,
+      }}>
+        <NavBtn onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx === 0}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </NavBtn>
+        <div style={{
+          fontSize: 12, fontWeight: 600, color: 'rgba(245,239,230,0.7)',
+          minWidth: 60, textAlign: 'center', letterSpacing: 0.3,
+          textTransform: 'uppercase',
+        }}>
+          {String(idx + 1).padStart(2,'0')} / {String(SCREENS.length).padStart(2,'0')} · {SCREENS[idx].label}
+        </div>
+        <NavBtn onClick={next}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M5 2l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </NavBtn>
+      </div>
+
+      {/* tweaks panel */}
+      {tweaksVisible && (
+        <div style={{
+          position: 'fixed', bottom: 80, right: 24,
+          width: 260, padding: 16, borderRadius: 20,
+          background: 'rgba(20,15,10,0.85)',
+          backdropFilter: 'blur(30px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(30px) saturate(180%)',
+          border: '0.5px solid rgba(255,255,255,0.12)',
+          zIndex: 200,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+        }}>
+          <div style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: 1,
+            color: 'oklch(0.78 0.14 70)',
+            textTransform: 'uppercase', marginBottom: 12,
+          }}>Tweaks</div>
+          <TweakRow label="Device frame">
+            <Toggle value={tweaks.showDeviceFrame} onChange={(v) => setTweak('showDeviceFrame', v)} />
+          </TweakRow>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NavBtn({ children, onClick, disabled }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: 32, height: 32, borderRadius: '50%',
+        border: 'none', cursor: disabled ? 'default' : 'pointer',
+        background: disabled ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)',
+        color: disabled ? 'rgba(245,239,230,0.2)' : '#f5efe6',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'background 0.2s ease',
+      }}
+    >{children}</button>
+  );
+}
+
+function TweakRow({ label, children }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '8px 0', fontSize: 13, color: '#f5efe6',
+    }}>
+      <span>{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function Toggle({ value, onChange }) {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      style={{
+        width: 44, height: 26, borderRadius: 13,
+        background: value ? 'oklch(0.78 0.14 70)' : 'rgba(255,255,255,0.15)',
+        border: 'none', cursor: 'pointer', position: 'relative',
+        transition: 'background 0.2s ease',
+      }}
+    >
+      <div style={{
+        position: 'absolute', top: 2,
+        left: value ? 20 : 2,
+        width: 22, height: 22, borderRadius: '50%',
+        background: '#fff',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+        transition: 'left 0.2s cubic-bezier(0.34, 1.3, 0.5, 1)',
+      }} />
+    </button>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<OnboardingApp />);
+</script>
+</body>
+</html>
